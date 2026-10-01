@@ -236,7 +236,7 @@ export const EnrollmentTestingModal = () => {
         {/* Footer */}
         <div className="modal-footer">
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginRight: 'auto' }}>
-            <Server size={14} color="var(--primary)" /> API Status: <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Connected (Express Server :5000)</span>
+            <Server size={14} color="var(--primary)" /> API Status: <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Connected (Express Server :5006)</span>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={() => setIsTestingModalOpen(false)}>
             Tutup Testing Suite

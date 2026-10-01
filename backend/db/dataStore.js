@@ -46,7 +46,14 @@ class DataStore {
   updateUserProfile(id, data) {
     const user = this.users.find(u => u.id === id);
     if (!user) return null;
-    Object.assign(user, data);
+    const profileFields = ['name', 'title', 'bio'];
+    profileFields.forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(data, field)) user[field] = data[field];
+    });
+    if (Object.prototype.hasOwnProperty.call(data, 'avatar')) {
+      const defaultUser = initialUsers.find(item => item.id === id);
+      user.avatar = data.avatar || defaultUser?.avatar || '';
+    }
     const { password: _, ...updated } = user;
     return updated;
   }
@@ -288,16 +295,55 @@ class DataStore {
   }
 
   // --- Curriculum & Materials (Admin) ---
-  addModule(trainingId, title) {
+  addModule(trainingId, moduleData) {
     const count = this.modules.filter(m => m.trainingId === trainingId).length;
+    const data = typeof moduleData === 'string' ? { title: moduleData } : moduleData;
     const newModule = {
       id: `mod-${Date.now()}`,
       trainingId,
-      title,
-      sequenceNumber: count + 1
+      description: '',
+      ...data,
+      sequenceNumber: Math.min(Math.max(Number(data.sequenceNumber) || count + 1, 1), count + 1)
     };
     this.modules.push(newModule);
+    this.reorderModules(trainingId, newModule.id, newModule.sequenceNumber);
     return newModule;
+  }
+
+  updateModule(moduleId, updates) {
+    const module = this.modules.find(item => item.id === moduleId);
+    if (!module) return null;
+    Object.assign(module, updates);
+    this.reorderModules(module.trainingId, module.id, updates.sequenceNumber);
+    return module;
+  }
+
+  reorderModules(trainingId, moduleId, sequenceNumber) {
+    const modules = this.modules
+      .filter(item => item.trainingId === trainingId)
+      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+    const moduleIndex = modules.findIndex(item => item.id === moduleId);
+    if (moduleIndex === -1) return;
+    const [module] = modules.splice(moduleIndex, 1);
+    const targetIndex = Math.min(Math.max(Number(sequenceNumber) - 1 || 0, 0), modules.length);
+    modules.splice(targetIndex, 0, module);
+    modules.forEach((item, index) => { item.sequenceNumber = index + 1; });
+  }
+
+  deleteModule(moduleId) {
+    const moduleIndex = this.modules.findIndex(item => item.id === moduleId);
+    if (moduleIndex === -1) return null;
+    const [module] = this.modules.splice(moduleIndex, 1);
+    const materialIds = this.materials.filter(item => item.moduleId === moduleId).map(item => item.id);
+    this.materials = this.materials.filter(item => item.moduleId !== moduleId);
+    this.materialProgress = this.materialProgress.filter(item => !materialIds.includes(item.materialId));
+    const submissionIds = this.submissions.filter(item => materialIds.includes(item.assignmentId)).map(item => item.id);
+    this.submissions = this.submissions.filter(item => !materialIds.includes(item.assignmentId));
+    this.evaluations = this.evaluations.filter(item => !submissionIds.includes(item.submissionId));
+    this.modules.filter(item => item.trainingId === module.trainingId).forEach((item, index) => {
+      item.sequenceNumber = index + 1;
+    });
+    return module;
   }
 
   addMaterial(materialData) {
@@ -309,6 +355,27 @@ class DataStore {
     };
     this.materials.push(newMaterial);
     return newMaterial;
+  }
+
+  updateMaterial(materialId, updates) {
+    const material = this.materials.find(item => item.id === materialId);
+    if (!material) return null;
+    Object.assign(material, updates);
+    return material;
+  }
+
+  deleteMaterial(materialId) {
+    const materialIndex = this.materials.findIndex(item => item.id === materialId);
+    if (materialIndex === -1) return null;
+    const [material] = this.materials.splice(materialIndex, 1);
+    this.materialProgress = this.materialProgress.filter(item => item.materialId !== materialId);
+    const submissionIds = this.submissions.filter(item => item.assignmentId === materialId).map(item => item.id);
+    this.submissions = this.submissions.filter(item => item.assignmentId !== materialId);
+    this.evaluations = this.evaluations.filter(item => !submissionIds.includes(item.submissionId));
+    this.materials.filter(item => item.moduleId === material.moduleId).forEach((item, index) => {
+      item.sequenceNumber = index + 1;
+    });
+    return material;
   }
 
   // --- Submissions & Evaluations ---

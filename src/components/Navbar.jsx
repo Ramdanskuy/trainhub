@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
-  BookOpen, 
   Home, 
   Compass, 
   BarChart2, 
@@ -35,9 +34,7 @@ export const Navbar = () => {
       <div className="navbar-inner">
         {/* Brand / Logo */}
         <div className="navbar-brand" onClick={() => navigateTo('home')}>
-          <div className="brand-icon">
-            <BookOpen size={20} />
-          </div>
+          <img src="/logo.png" alt="TrainHub Logo" style={{ width: 34, height: 34, objectFit: 'contain' }} />
           <span>TrainHub</span>
         </div>
 

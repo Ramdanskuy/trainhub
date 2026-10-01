@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { User, Award, CheckCircle, Edit3, Save, Shield, Download, BookOpen } from 'lucide-react';
+import { Award, CheckCircle, Edit3, Save, Download, Camera, X } from 'lucide-react';
 import { api } from '../services/api';
 import { CertificateModal } from '../components/CertificateModal';
 
@@ -10,6 +10,9 @@ export const ProfilePage = () => {
   const [name, setName] = useState(user ? user.name : '');
   const [title, setTitle] = useState(user ? user.title : '');
   const [bio, setBio] = useState(user ? user.bio : '');
+  const [avatarDraft, setAvatarDraft] = useState(user?.avatar || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const avatarInputRef = useRef(null);
   const [myProgress, setMyProgress] = useState(null);
   const [selectedCert, setSelectedCert] = useState(null);
 
@@ -30,16 +33,50 @@ export const ProfilePage = () => {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
+    setIsSaving(true);
     try {
-      const res = await api.updateProfile({ name, title, bio });
+      const res = await api.updateProfile({ name, title, bio, avatar: avatarDraft });
       if (res.success) {
         setUser(res.data);
         addToast("Profil berhasil diperbarui!", "success");
         setIsEditing(false);
+      } else {
+        addToast(res.message || 'Gagal memperbarui profil.', 'error');
       }
     } catch (err) {
-      addToast("Gagal memperbarui profil.", "error");
+      addToast(err.message || "Gagal memperbarui profil.", "error");
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  const handleCancelEdit = () => {
+    setName(user?.name || '');
+    setTitle(user?.title || '');
+    setBio(user?.bio || '');
+    setAvatarDraft(user?.avatar || '');
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+    setIsEditing(false);
+  };
+
+  const handleAvatarSelected = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      addToast('Pilih foto JPG, JPEG, PNG, atau WEBP.', 'error');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      addToast('Ukuran foto maksimal 1 MB.', 'error');
+      event.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAvatarDraft(String(reader.result));
+    reader.onerror = () => addToast('Foto gagal dibaca. Silakan pilih file lain.', 'error');
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -48,11 +85,20 @@ export const ProfilePage = () => {
       <div className="card" style={{ marginBottom: '28px', padding: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <img 
-              src={user.avatar} 
-              alt={user.name} 
-              style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover', border: '4px solid var(--primary-soft)' }} 
-            />
+            <div className="profile-avatar-wrap">
+              <img
+                src={isEditing ? (avatarDraft || user.avatar) : user.avatar}
+                alt={user.name}
+                style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover', border: '4px solid var(--primary-soft)' }}
+              />
+              {isEditing && (
+                <div className="profile-avatar-actions">
+                  <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handleAvatarSelected} />
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => avatarInputRef.current?.click()}><Camera size={14} /> Ubah Foto</button>
+                  {avatarDraft && <button type="button" className="profile-avatar-remove" onClick={() => { setAvatarDraft(''); if (avatarInputRef.current) avatarInputRef.current.value = ''; }}><X size={13} /> Hapus Foto</button>}
+                </div>
+              )}
+            </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '4px' }}>
                 <h1 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)' }}>{user.name}</h1>
@@ -69,7 +115,7 @@ export const ProfilePage = () => {
 
           <button 
             className={`btn ${isEditing ? 'btn-secondary' : 'btn-primary'} btn-sm`}
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={() => isEditing ? handleCancelEdit() : setIsEditing(true)}
           >
             <Edit3 size={14} />
             <span>{isEditing ? 'Batal Edit' : 'Edit Profil'}</span>
@@ -112,8 +158,8 @@ export const ProfilePage = () => {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary btn-sm">
-              <Save size={14} /> Simpan Perubahan Profil
+            <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
+              <Save size={14} /> {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Profil'}
             </button>
           </form>
         )}
