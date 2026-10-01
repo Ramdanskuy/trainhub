@@ -8,6 +8,26 @@ const getHeaders = () => {
   };
 };
 
+const requestJson = async (path, options = {}) => {
+  const method = options.method || 'GET';
+  const response = await fetch(path, options);
+  const contentType = response.headers.get('content-type') || '';
+  const body = await response.text();
+  if (!contentType.includes('application/json')) {
+    throw new Error(`API ${method} ${path} mengembalikan respons bukan JSON (HTTP ${response.status}). Periksa route backend dan restart server API.`);
+  }
+  let data;
+  try {
+    data = body ? JSON.parse(body) : {};
+  } catch {
+    throw new Error(`Respons JSON dari API ${method} ${path} tidak valid.`);
+  }
+  if (!response.ok && !data.message) {
+    data.message = `Permintaan API gagal (HTTP ${response.status}).`;
+  }
+  return data;
+};
+
 export const api = {
   // Auth
   login: async (email, password) => {
@@ -32,8 +52,7 @@ export const api = {
   },
 
   getTrainingDetail: async (id) => {
-    const res = await fetch(`/api/trainings/${id}`, { headers: getHeaders() });
-    return res.json();
+    return requestJson(`/api/trainings/${encodeURIComponent(id)}`, { headers: getHeaders() });
   },
 
   createTraining: async (data) => {
@@ -93,22 +112,40 @@ export const api = {
     return res.json();
   },
 
-  addModule: async (trainingId, title) => {
-    const res = await fetch(`/api/trainings/${trainingId}/modules`, {
+  addModule: async (trainingId, moduleData) => {
+    return requestJson(`/api/trainings/${encodeURIComponent(trainingId)}/modules`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ title })
+      body: JSON.stringify(moduleData)
     });
-    return res.json();
+  },
+
+  updateModule: async (moduleId, moduleData) => {
+    return requestJson(`/api/modules/${encodeURIComponent(moduleId)}`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify(moduleData)
+    });
+  },
+
+  deleteModule: async (moduleId) => {
+    return requestJson(`/api/modules/${encodeURIComponent(moduleId)}`, { method: 'DELETE', headers: getHeaders() });
   },
 
   addMaterial: async (moduleId, materialData) => {
-    const res = await fetch(`/api/modules/${moduleId}/materials`, {
+    return requestJson(`/api/modules/${encodeURIComponent(moduleId)}/materials`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(materialData)
     });
-    return res.json();
+  },
+
+  updateMaterial: async (materialId, materialData) => {
+    return requestJson(`/api/materials/${encodeURIComponent(materialId)}`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify(materialData)
+    });
+  },
+
+  deleteMaterial: async (materialId) => {
+    return requestJson(`/api/materials/${encodeURIComponent(materialId)}`, { method: 'DELETE', headers: getHeaders() });
   },
 
   // Submissions & Evaluations
@@ -167,12 +204,11 @@ export const api = {
   },
 
   updateProfile: async (data) => {
-    const res = await fetch('/api/users/profile', {
+    return requestJson('/api/users/profile', {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(data)
     });
-    return res.json();
   },
 
   // Testing & Enrollment Suite

@@ -13,7 +13,13 @@ import {
   UserCheck, 
   Award,
   Layers,
-  X
+  X,
+  MoreVertical,
+  Eye,
+  Clock,
+  ExternalLink,
+  Upload,
+  ClipboardList
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -39,11 +45,14 @@ export const AdminDashboardPage = () => {
 
   // Material Builder Modal State
   const [selectedCourseForContent, setSelectedCourseForContent] = useState(null);
-  const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [selectedModuleId, setSelectedModuleId] = useState('');
-  const [materialType, setMaterialType] = useState('article');
-  const [materialTitle, setMaterialTitle] = useState('');
-  const [materialContent, setMaterialContent] = useState('');
+  const [moduleModalMode, setModuleModalMode] = useState(null);
+  const [moduleForm, setModuleForm] = useState({ title: '', description: '', sequenceNumber: 1 });
+  const [materialModalMode, setMaterialModalMode] = useState(null);
+  const [materialForm, setMaterialForm] = useState({});
+  const [materialQuestions, setMaterialQuestions] = useState([]);
+  const [viewingMaterial, setViewingMaterial] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   // Submission Grade Modal State
   const [gradingSubmission, setGradingSubmission] = useState(null);
@@ -97,48 +106,147 @@ export const AdminDashboardPage = () => {
     }
   };
 
-  const handleAddModule = async () => {
+  const refreshSelectedCourse = async () => {
     if (!selectedCourseForContent) return;
-    const title = window.prompt("Masukkan Judul Modul Baru:");
-    if (!title) return;
+    const detail = await api.getTrainingDetail(selectedCourseForContent.id);
+    if (detail.success) setSelectedCourseForContent(detail.data);
+  };
 
+  const openModuleForm = (mode, module = null) => {
+    setModuleForm(module ? {
+      title: module.title || '',
+      description: module.description || '',
+      sequenceNumber: module.sequenceNumber || 1
+    } : {
+      title: '',
+      description: '',
+      sequenceNumber: (selectedCourseForContent?.modules?.length || 0) + 1
+    });
+    setModuleModalMode({ mode, module });
+  };
+
+  const handleSaveModule = async (event) => {
+    event.preventDefault();
+    if (!selectedCourseForContent) return;
     try {
-      const res = await api.addModule(selectedCourseForContent.id, title);
-      if (res.success) {
-        addToast("Modul berhasil ditambahkan!", "success");
-        // Reload detail
-        const detail = await api.getTrainingDetail(selectedCourseForContent.id);
-        if (detail.success) setSelectedCourseForContent(detail.data);
-      }
+      const res = moduleModalMode.mode === 'edit'
+        ? await api.updateModule(moduleModalMode.module.id, moduleForm)
+        : await api.addModule(selectedCourseForContent.id, moduleForm);
+      if (!res.success) throw new Error(res.message);
+      addToast(moduleModalMode.mode === 'edit' ? 'Modul berhasil diperbarui.' : 'Modul berhasil ditambahkan.', 'success');
+      setModuleModalMode(null);
+      await refreshSelectedCourse();
     } catch (err) {
-      addToast("Gagal menambahkan modul.", "error");
+      addToast(err.message || 'Gagal menyimpan modul.', 'error');
     }
   };
 
-  const handleSaveMaterial = async (e) => {
-    e.preventDefault();
-    if (!selectedModuleId || !materialTitle) return;
+  const articleToText = (content = '') => content
+    .replace(/<\/(p|h[1-6]|li|blockquote|div)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
 
-    try {
-      const res = await api.addMaterial(selectedModuleId, {
-        title: materialTitle,
-        type: materialType,
-        content: materialType === 'article' ? `<h1>${materialTitle}</h1><p>${materialContent}</p>` : materialContent,
-        fileUrl: materialType === 'pdf' ? 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' : '',
-        videoUrl: materialType === 'video' ? 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' : ''
-      });
+  const articleToHtml = (content = '') => content
+    .split(/\n+/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+    .map(paragraph => `<p>${paragraph.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}</p>`)
+    .join('');
 
-      if (res.success) {
-        addToast("Materi baru berhasil ditambahkan!", "success");
-        setIsMaterialModalOpen(false);
-        setMaterialTitle('');
-        setMaterialContent('');
-        const detail = await api.getTrainingDetail(selectedCourseForContent.id);
-        if (detail.success) setSelectedCourseForContent(detail.data);
-      }
-    } catch (err) {
-      addToast("Gagal menambah materi.", "error");
+  const openMaterialForm = (mode, material = null, moduleId = selectedModuleId) => {
+    const type = material?.type || 'article';
+    setSelectedModuleId(material?.moduleId || moduleId || selectedCourseForContent?.modules?.[0]?.id || '');
+    setMaterialForm({
+      title: material?.title || '',
+      type,
+      duration: material?.duration || '',
+      description: material?.description || '',
+      content: type === 'article' ? articleToText(material?.content || '') : material?.content || '',
+      fileUrl: material?.fileUrl || '',
+      fileName: material?.fileName || '',
+      videoUrl: material?.videoUrl || '',
+      deadline: material?.assignmentData?.deadline || '',
+      attachmentUrl: material?.assignmentData?.attachmentUrl || '',
+      attachmentName: material?.assignmentData?.attachmentName || ''
+    });
+    setMaterialQuestions((material?.quizData || []).map(question => ({
+      question: question.question || '',
+      options: question.options?.length ? [...question.options] : ['', ''],
+      correctOption: Number(question.correctOption) || 0
+    })));
+    setViewingMaterial(null);
+    setMaterialModalMode({ mode, material });
+  };
+
+  const handleSaveMaterial = async (event) => {
+    event.preventDefault();
+    if (!selectedModuleId || !materialForm.title) return;
+    if (materialForm.type === 'quiz' && (!materialQuestions.length || materialQuestions.some(question => !question.question.trim() || question.options.length < 2 || question.options.some(option => !option.trim())))) {
+      addToast('Kuis memerlukan pertanyaan dan minimal dua pilihan jawaban.', 'error');
+      return;
     }
+    const { deadline, attachmentUrl, attachmentName, ...fields } = materialForm;
+    const payload = {
+      ...fields,
+      content: materialForm.type === 'article' ? articleToHtml(materialForm.content) : materialForm.content,
+      fileUrl: materialForm.type === 'pdf' ? materialForm.fileUrl : '',
+      fileName: materialForm.type === 'pdf' ? materialForm.fileName : '',
+      videoUrl: materialForm.type === 'video' ? materialForm.videoUrl : '',
+      quizData: materialForm.type === 'quiz' ? materialQuestions.map((question, index) => ({
+        id: `q-${Date.now()}-${index}`,
+        ...question,
+        correctOption: Number(question.correctOption),
+        score: Math.floor(100 / Math.max(materialQuestions.length, 1))
+      })) : [],
+      assignmentData: materialForm.type === 'assignment' ? { deadline, attachmentUrl, attachmentName } : null
+    };
+    try {
+      const res = materialModalMode.mode === 'edit'
+        ? await api.updateMaterial(materialModalMode.material.id, payload)
+        : await api.addMaterial(selectedModuleId, payload);
+      if (!res.success) throw new Error(res.message);
+      addToast(materialModalMode.mode === 'edit' ? 'Materi berhasil diperbarui.' : 'Materi berhasil ditambahkan.', 'success');
+      setMaterialModalMode(null);
+      await refreshSelectedCourse();
+    } catch (err) {
+      addToast(err.message || 'Gagal menyimpan materi.', 'error');
+    }
+  };
+
+  const handleDeleteCurriculumItem = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = deleteTarget.type === 'module'
+        ? await api.deleteModule(deleteTarget.item.id)
+        : await api.deleteMaterial(deleteTarget.item.id);
+      if (!res.success) throw new Error(res.message);
+      addToast(deleteTarget.type === 'module' ? 'Modul berhasil dihapus.' : 'Materi berhasil dihapus.', 'success');
+      setDeleteTarget(null);
+      setViewingMaterial(null);
+      await refreshSelectedCourse();
+    } catch (err) {
+      addToast(err.message || 'Gagal menghapus item kurikulum.', 'error');
+    }
+  };
+
+  const handleMaterialFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      addToast('Ukuran file maksimal 1 MB untuk penyimpanan demo ini.', 'error');
+      event.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setMaterialForm(current => ({ ...current, fileUrl: reader.result, fileName: file.name }));
+    reader.readAsDataURL(file);
   };
 
   const handleGradeSubmission = async (e) => {
@@ -295,22 +403,21 @@ export const AdminDashboardPage = () => {
 
             {/* Curriculum Builder Details Drawer */}
             {selectedCourseForContent && (
-              <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '2px solid var(--primary-soft)' }}>
+              <div className="curriculum-builder" style={{ marginTop: '28px', paddingTop: '20px', borderTop: '2px solid var(--primary-soft)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 700 }}>
                     Builder Kurikulum: {selectedCourseForContent.title}
                   </h3>
 
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleAddModule}>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModuleForm('add')}>
                       <Plus size={14} /> Tambah Modul
                     </button>
                     <button 
                       className="btn btn-soft btn-sm" 
                       onClick={() => {
-                        if (selectedCourseForContent.modules.length > 0) {
-                          setSelectedModuleId(selectedCourseForContent.modules[0].id);
-                          setIsMaterialModalOpen(true);
+                        if (selectedCourseForContent.modules?.length > 0) {
+                          openMaterialForm('add', null, selectedCourseForContent.modules[0].id);
                         } else {
                           addToast("Buat modul terlebih dahulu.", "info");
                         }
@@ -321,23 +428,42 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {selectedCourseForContent.modules && selectedCourseForContent.modules.map(m => (
-                    <div key={m.id} className="card" style={{ padding: '14px', backgroundColor: 'var(--background)' }}>
-                      <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>{m.title}</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {m.materials && m.materials.map(mat => (
-                          <div key={mat.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', backgroundColor: 'var(--surface)', borderRadius: '6px', fontSize: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span className="badge" style={{ backgroundColor: 'var(--surface-alt)', color: 'var(--text-secondary)' }}>{mat.type}</span>
-                              <span style={{ fontWeight: 600 }}>{mat.title}</span>
-                            </div>
-                            <span style={{ color: 'var(--text-muted)' }}>{mat.duration}</span>
+                <div className="curriculum-module-list">
+                  {selectedCourseForContent.modules?.map(module => (
+                    <section key={module.id} className="curriculum-module card">
+                      <div className="curriculum-module-heading">
+                        <div>
+                          <h4>{module.title}</h4>
+                          {module.description && <p>{module.description}</p>}
+                        </div>
+                        <div className="curriculum-actions">
+                          <button className="curriculum-icon-button" title="Edit modul" aria-label={`Edit ${module.title}`} onClick={() => openModuleForm('edit', module)}><Edit size={16} /></button>
+                          <button className="curriculum-icon-button curriculum-danger" title="Hapus modul" aria-label={`Hapus ${module.title}`} onClick={() => setDeleteTarget({ type: 'module', item: module })}><Trash2 size={16} /></button>
+                        </div>
+                      </div>
+                      <div className="curriculum-material-list">
+                        {module.materials?.map(material => (
+                          <div className="curriculum-material-row" key={material.id}>
+                            <button className="curriculum-material-open" onClick={() => setViewingMaterial(material)}>
+                              <span className="badge curriculum-type-badge">{material.type}</span>
+                              <span className="curriculum-material-title">{material.title}</span>
+                              <span className="curriculum-material-duration"><Clock size={14} />{material.duration || 'Durasi belum diatur'}</span>
+                            </button>
+                            <details className="curriculum-menu">
+                              <summary aria-label={`Menu ${material.title}`} title="Aksi materi"><MoreVertical size={18} /></summary>
+                              <div className="curriculum-menu-popover">
+                                <button onClick={() => setViewingMaterial(material)}><Eye size={14} /> Lihat Materi</button>
+                                <button onClick={() => openMaterialForm('edit', material)}><Edit size={14} /> Edit Materi</button>
+                                <button className="curriculum-danger" onClick={() => setDeleteTarget({ type: 'material', item: material })}><Trash2 size={14} /> Hapus Materi</button>
+                              </div>
+                            </details>
                           </div>
                         ))}
+                        {!module.materials?.length && <p className="curriculum-empty">Belum ada materi di modul ini.</p>}
                       </div>
-                    </div>
+                    </section>
                   ))}
+                  {!selectedCourseForContent.modules?.length && <p className="curriculum-empty">Belum ada modul. Tambahkan modul pertama untuk mulai menyusun kurikulum.</p>}
                 </div>
               </div>
             )}
@@ -446,48 +572,81 @@ export const AdminDashboardPage = () => {
         </div>
       )}
 
-      {/* Add Material Modal */}
-      {isMaterialModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsMaterialModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">Tambah Materi Pembelajaran Baru</div>
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setIsMaterialModalOpen(false)}>
-                <X size={20} />
-              </button>
+      {moduleModalMode && (
+        <div className="modal-overlay" onClick={() => setModuleModalMode(null)}>
+          <div className="modal-content curriculum-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header"><div className="modal-title">{moduleModalMode.mode === 'edit' ? 'Edit Modul' : 'Tambah Modul'}</div><button aria-label="Tutup" onClick={() => setModuleModalMode(null)}><X size={20} /></button></div>
+            <form onSubmit={handleSaveModule}>
+              <div className="modal-body">
+                <div className="form-group"><label className="form-label">Nama Modul</label><input className="form-input" value={moduleForm.title} onChange={event => setModuleForm({ ...moduleForm, title: event.target.value })} required /></div>
+                <div className="form-group"><label className="form-label">Deskripsi</label><textarea className="form-textarea" rows={3} value={moduleForm.description} onChange={event => setModuleForm({ ...moduleForm, description: event.target.value })} /></div>
+                <div className="form-group"><label className="form-label">Urutan</label><input className="form-input" type="number" min="1" value={moduleForm.sequenceNumber} onChange={event => setModuleForm({ ...moduleForm, sequenceNumber: event.target.value })} required /></div>
+              </div>
+              <div className="modal-footer"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setModuleModalMode(null)}>Batal</button><button className="btn btn-primary btn-sm" type="submit">Simpan Perubahan</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {viewingMaterial && (
+        <div className="modal-overlay" onClick={() => setViewingMaterial(null)}>
+          <div className="modal-content curriculum-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header"><div className="modal-title">Detail Materi</div><button aria-label="Tutup" onClick={() => setViewingMaterial(null)}><X size={20} /></button></div>
+            <div className="modal-body curriculum-detail">
+              <span className="badge curriculum-type-badge">{viewingMaterial.type}</span>
+              <h3>{viewingMaterial.title}</h3>
+              <p className="curriculum-detail-meta"><Clock size={15} /> {viewingMaterial.duration || 'Durasi belum diatur'}</p>
+              {viewingMaterial.description && <p>{viewingMaterial.description}</p>}
+              {viewingMaterial.type === 'pdf' && <p>File: {viewingMaterial.fileName || 'Belum ada nama file'}</p>}
+              {viewingMaterial.type === 'video' && viewingMaterial.videoUrl && <a className="curriculum-resource-link" href={viewingMaterial.videoUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Buka video</a>}
+              {viewingMaterial.type === 'pdf' && viewingMaterial.fileUrl && <a className="curriculum-resource-link" href={viewingMaterial.fileUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Buka PDF</a>}
+              {viewingMaterial.content && <div className="curriculum-detail-content">{viewingMaterial.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</div>}
+              {viewingMaterial.type === 'quiz' && viewingMaterial.quizData?.map((question, index) => <div className="curriculum-quiz-preview" key={question.id || index}><strong>{index + 1}. {question.question}</strong><p>{question.options?.join(' · ')}</p></div>)}
+              {viewingMaterial.type === 'assignment' && viewingMaterial.assignmentData?.deadline && <p>Deadline: {new Date(viewingMaterial.assignmentData.deadline).toLocaleString('id-ID')}</p>}
             </div>
+            <div className="modal-footer"><button className="btn btn-danger btn-sm" onClick={() => setDeleteTarget({ type: 'material', item: viewingMaterial })}><Trash2 size={14} /> Hapus Materi</button><button className="btn btn-primary btn-sm" onClick={() => openMaterialForm('edit', viewingMaterial)}><Edit size={14} /> Edit Materi</button></div>
+          </div>
+        </div>
+      )}
+
+      {materialModalMode && selectedCourseForContent && (
+        <div className="modal-overlay" onClick={() => setMaterialModalMode(null)}>
+          <div className="modal-content curriculum-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header"><div className="modal-title">{materialModalMode.mode === 'edit' ? 'Edit Materi' : 'Tambah Materi Pembelajaran'}</div><button aria-label="Tutup" onClick={() => setMaterialModalMode(null)}><X size={20} /></button></div>
             <form onSubmit={handleSaveMaterial}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Pilih Modul Target:</label>
-                  <select className="form-select" value={selectedModuleId} onChange={(e) => setSelectedModuleId(e.target.value)}>
-                    {selectedCourseForContent.modules.map(m => (
-                      <option key={m.id} value={m.id}>{m.title}</option>
-                    ))}
-                  </select>
+                <div className="form-group"><label className="form-label">Pilih Modul</label><select className="form-select" value={selectedModuleId} onChange={event => setSelectedModuleId(event.target.value)} required>{selectedCourseForContent.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}</select></div>
+                <div className="grid-2">
+                  <div className="form-group"><label className="form-label">Jenis Materi</label><select className="form-select" value={materialForm.type || 'article'} onChange={event => setMaterialForm({ ...materialForm, type: event.target.value })}><option value="article">Article</option><option value="pdf">PDF</option><option value="video">Video</option><option value="quiz">Quiz</option><option value="assignment">Assignment</option></select></div>
+                  <div className="form-group"><label className="form-label">Durasi</label><input className="form-input" placeholder="Contoh: 15 Menit" value={materialForm.duration || ''} onChange={event => setMaterialForm({ ...materialForm, duration: event.target.value })} /></div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Jenis Materi:</label>
-                  <select className="form-select" value={materialType} onChange={(e) => setMaterialType(e.target.value)}>
-                    <option value="article">Artikel (Rich Text)</option>
-                    <option value="pdf">Dokumen PDF</option>
-                    <option value="video">Video Pembelajaran</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Judul Materi:</label>
-                  <input type="text" className="form-input" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} required />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Konten / Ringkasan Materi:</label>
-                  <textarea className="form-textarea" rows={4} value={materialContent} onChange={(e) => setMaterialContent(e.target.value)} required />
-                </div>
+                <div className="form-group"><label className="form-label">Judul Materi</label><input className="form-input" value={materialForm.title || ''} onChange={event => setMaterialForm({ ...materialForm, title: event.target.value })} required /></div>
+                <div className="form-group"><label className="form-label">Deskripsi</label><textarea className="form-textarea" rows={2} value={materialForm.description || ''} onChange={event => setMaterialForm({ ...materialForm, description: event.target.value })} /></div>
+                {materialForm.type === 'article' && <div className="form-group"><label className="form-label">Isi Artikel</label><textarea className="form-textarea" rows={7} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} required /></div>}
+                {materialForm.type === 'pdf' && <>
+                  <div className="form-group"><label className="form-label">Nama File</label><input className="form-input" value={materialForm.fileName || ''} onChange={event => setMaterialForm({ ...materialForm, fileName: event.target.value })} placeholder="panduan.pdf" /></div>
+                  <div className="form-group"><label className="form-label">URL PDF atau unggah file (maks. 1 MB)</label><input className="form-input" type="url" placeholder="https://..." value={materialForm.fileUrl?.startsWith('data:') ? '' : materialForm.fileUrl || ''} onChange={event => setMaterialForm({ ...materialForm, fileUrl: event.target.value })} /><label className="curriculum-upload"><Upload size={15} /> Pilih file PDF<input type="file" accept="application/pdf,.pdf" onChange={handleMaterialFile} /></label>{materialForm.fileName && <small>{materialForm.fileName}</small>}</div>
+                  <div className="form-group"><label className="form-label">Informasi Materi</label><textarea className="form-textarea" rows={3} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} /></div>
+                </>}
+                {materialForm.type === 'video' && <><div className="form-group"><label className="form-label">URL Video</label><input type="url" className="form-input" placeholder="https://..." value={materialForm.videoUrl || ''} onChange={event => setMaterialForm({ ...materialForm, videoUrl: event.target.value })} /></div><div className="form-group"><label className="form-label">Deskripsi / Informasi Video</label><textarea className="form-textarea" rows={3} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} /></div></>}
+                {materialForm.type === 'quiz' && <div className="curriculum-question-list"><div className="curriculum-question-title"><strong>Pertanyaan Kuis</strong><button type="button" className="btn btn-secondary btn-sm" onClick={() => setMaterialQuestions([...materialQuestions, { question: '', options: ['', ''], correctOption: 0 }])}><Plus size={14} /> Tambah Pertanyaan</button></div>
+                  {materialQuestions.map((question, questionIndex) => <div className="curriculum-question" key={questionIndex}><div className="form-group"><label className="form-label">Pertanyaan {questionIndex + 1}</label><input className="form-input" value={question.question} onChange={event => setMaterialQuestions(materialQuestions.map((item, index) => index === questionIndex ? { ...item, question: event.target.value } : item))} required /></div><div className="form-group"><label className="form-label">Pilihan Jawaban</label>{question.options.map((option, optionIndex) => <div className="curriculum-option" key={optionIndex}><input type="radio" name={`correct-${questionIndex}`} checked={Number(question.correctOption) === optionIndex} onChange={() => setMaterialQuestions(materialQuestions.map((item, index) => index === questionIndex ? { ...item, correctOption: optionIndex } : item))} aria-label={`Tandai pilihan ${optionIndex + 1} sebagai jawaban benar`} /><input className="form-input" value={option} onChange={event => setMaterialQuestions(materialQuestions.map((item, index) => index === questionIndex ? { ...item, options: item.options.map((value, valueIndex) => valueIndex === optionIndex ? event.target.value : value) } : item))} placeholder={`Pilihan ${optionIndex + 1}`} required /></div>)}<button type="button" className="curriculum-text-button" onClick={() => setMaterialQuestions(materialQuestions.map((item, index) => index === questionIndex ? { ...item, options: [...item.options, ''] } : item))}><Plus size={13} /> Tambah pilihan</button></div></div>)}
+                  {materialQuestions.length === 0 && <p className="curriculum-empty">Tambahkan minimal satu pertanyaan beserta pilihan jawaban.</p>}
+                </div>}
+                {materialForm.type === 'assignment' && <><div className="form-group"><label className="form-label">Instruksi Tugas</label><textarea className="form-textarea" rows={5} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} required /></div><div className="form-group"><label className="form-label">Deadline (opsional)</label><input type="datetime-local" className="form-input" value={materialForm.deadline ? materialForm.deadline.slice(0, 16) : ''} onChange={event => setMaterialForm({ ...materialForm, deadline: event.target.value ? new Date(event.target.value).toISOString() : '' })} /></div><div className="grid-2"><div className="form-group"><label className="form-label">Nama file pendukung</label><input className="form-input" value={materialForm.attachmentName || ''} onChange={event => setMaterialForm({ ...materialForm, attachmentName: event.target.value })} /></div><div className="form-group"><label className="form-label">URL file pendukung</label><input type="url" className="form-input" value={materialForm.attachmentUrl || ''} onChange={event => setMaterialForm({ ...materialForm, attachmentUrl: event.target.value })} /></div></div></>}
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsMaterialModalOpen(false)}>Batal</button>
-                <button type="submit" className="btn btn-primary btn-sm">Simpan Materi</button>
-              </div>
+              <div className="modal-footer"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setMaterialModalMode(null)}>Batal</button><button className="btn btn-primary btn-sm" type="submit">Simpan Perubahan</button></div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-content curriculum-confirm" role="alertdialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header"><div className="modal-title">Konfirmasi Hapus</div><button aria-label="Tutup" onClick={() => setDeleteTarget(null)}><X size={20} /></button></div>
+            <div className="modal-body"><p>{deleteTarget.type === 'module' ? `Hapus modul "${deleteTarget.item.title}" beserta seluruh materi di dalamnya?` : 'Apakah Anda yakin ingin menghapus materi ini?'}</p></div>
+            <div className="modal-footer"><button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(null)}>Batal</button><button className="btn btn-danger btn-sm" onClick={handleDeleteCurriculumItem}><Trash2 size={14} /> Hapus</button></div>
           </div>
         </div>
       )}

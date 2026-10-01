@@ -163,16 +163,37 @@ router.post('/materials/:id/complete', (req, res) => {
 });
 
 router.post('/trainings/:id/modules', (req, res) => {
-  const { title } = req.body;
+  const { title, description, sequenceNumber } = req.body;
   if (!title) {
     return res.status(400).json({ success: false, message: "Judul modul wajib diisi." });
   }
-  const newMod = dataStore.addModule(req.params.id, title);
+  if (!dataStore.trainings.some(training => training.id === req.params.id)) {
+    return res.status(404).json({ success: false, message: "Pelatihan tidak ditemukan." });
+  }
+  const newMod = dataStore.addModule(req.params.id, { title, description, sequenceNumber });
   return res.status(201).json({ success: true, message: "Modul berhasil ditambahkan.", data: newMod });
 });
 
+router.put('/modules/:moduleId', (req, res) => {
+  const { title, description, sequenceNumber } = req.body;
+  if (!title) return res.status(400).json({ success: false, message: "Nama modul wajib diisi." });
+  const module = dataStore.updateModule(req.params.moduleId, {
+    title,
+    description: description || '',
+    sequenceNumber: Number(sequenceNumber) || 1
+  });
+  if (!module) return res.status(404).json({ success: false, message: "Modul tidak ditemukan." });
+  return res.json({ success: true, message: "Modul berhasil diperbarui.", data: module });
+});
+
+router.delete('/modules/:moduleId', (req, res) => {
+  const module = dataStore.deleteModule(req.params.moduleId);
+  if (!module) return res.status(404).json({ success: false, message: "Modul tidak ditemukan." });
+  return res.json({ success: true, message: "Modul berhasil dihapus.", data: module });
+});
+
 router.post('/modules/:moduleId/materials', (req, res) => {
-  const { title, type, content, fileUrl, videoUrl, quizData, assignmentData } = req.body;
+  const { title, type, content, description, duration, fileUrl, fileName, videoUrl, quizData, assignmentData } = req.body;
   if (!title || !type) {
     return res.status(400).json({ success: false, message: "Judul dan jenis materi wajib diisi." });
   }
@@ -187,13 +208,32 @@ router.post('/modules/:moduleId/materials', (req, res) => {
     title,
     type,
     content,
+    description,
+    duration,
     fileUrl,
+    fileName,
     videoUrl,
     quizData,
     assignmentData
   });
 
   return res.status(201).json({ success: true, message: "Materi pembelajaran berhasil ditambahkan!", data: newMat });
+});
+
+router.put('/materials/:materialId', (req, res) => {
+  const { title, type, content, description, duration, fileUrl, fileName, videoUrl, quizData, assignmentData } = req.body;
+  if (!title || !type) return res.status(400).json({ success: false, message: "Judul dan jenis materi wajib diisi." });
+  const material = dataStore.updateMaterial(req.params.materialId, {
+    title, type, content, description, duration, fileUrl, fileName, videoUrl, quizData, assignmentData
+  });
+  if (!material) return res.status(404).json({ success: false, message: "Materi tidak ditemukan." });
+  return res.json({ success: true, message: "Materi berhasil diperbarui.", data: material });
+});
+
+router.delete('/materials/:materialId', (req, res) => {
+  const material = dataStore.deleteMaterial(req.params.materialId);
+  if (!material) return res.status(404).json({ success: false, message: "Materi tidak ditemukan." });
+  return res.json({ success: true, message: "Materi berhasil dihapus.", data: material });
 });
 
 // --- Assignments & Submissions Routes ---
@@ -296,11 +336,20 @@ router.post('/discussions/:id/replies', (req, res) => {
 // --- Profile Routes ---
 router.get('/users/profile', (req, res) => {
   const user = getUserFromHeader(req);
+  if (!user) return res.status(404).json({ success: false, message: "Pengguna tidak ditemukan." });
   return res.json({ success: true, data: user });
 });
 
 router.put('/users/profile', (req, res) => {
   const user = getUserFromHeader(req);
+  if (!user) return res.status(404).json({ success: false, message: "Pengguna tidak ditemukan." });
+  const { avatar } = req.body;
+  if (avatar && (typeof avatar !== 'string' || !/^data:image\/(jpeg|png|webp);base64,[a-z0-9+/]+=*$/i.test(avatar))) {
+    return res.status(400).json({ success: false, message: "Foto harus berupa JPG, PNG, atau WEBP yang valid." });
+  }
+  if (avatar && avatar.length > 1400000) {
+    return res.status(413).json({ success: false, message: "Ukuran foto maksimal 1 MB." });
+  }
   const updated = dataStore.updateUserProfile(user.id, req.body);
   return res.json({ success: true, message: "Profil berhasil diperbarui.", data: updated });
 });
