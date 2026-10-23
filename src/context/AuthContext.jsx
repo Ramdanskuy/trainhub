@@ -3,27 +3,31 @@ import { api } from '../services/api';
 
 const AuthContext = createContext();
 
-const defaultUser = {
-  id: "usr-1",
-  name: "Muhammad Ramdan",
-  email: "karyawan@trainhub.com",
-  role: "karyawan",
-  avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-  title: "Software Engineer / Lead Frontend",
-  department: "IT & Technology"
+const readSavedSessionUser = () => {
+  const savedUser = localStorage.getItem('trainhub_user');
+  const savedToken = localStorage.getItem('trainhub_session_token');
+  const tokenParts = savedToken?.split(':') || [];
+  const expiresAt = Number(tokenParts[1]);
+  if (!savedUser || tokenParts.length !== 3 || !/^[a-f0-9]{64}$/i.test(tokenParts[2]) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    localStorage.removeItem('trainhub_user');
+    localStorage.removeItem('trainhub_session_token');
+    return null;
+  }
+  return JSON.parse(savedUser);
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('trainhub_user');
-    return saved ? JSON.parse(saved) : defaultUser;
-  });
+  const [user, setUser] = useState(readSavedSessionUser);
 
   const [toasts, setToasts] = useState([]);
   const [globalSearch, setGlobalSearch] = useState('');
-  const [activeTab, setActiveTab] = useState('home'); // 'home', 'pelatihan', 'progress', 'forum', 'profil', 'admin', 'classroom'
+  const [activeTab, setActiveTab] = useState(() => {
+    const savedUser = readSavedSessionUser();
+    if (!savedUser) return 'login';
+    return savedUser.role === 'admin' ? 'admin' : 'home';
+  });
   const [selectedCourseId, setSelectedCourseId] = useState(null);
-  const [isTestingModalOpen, setIsTestingModalOpen] = useState(false);
+  const [notificationTarget, setNotificationTarget] = useState(null);
 
   useEffect(() => {
     if (user) {
@@ -45,6 +49,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.login(email, password);
       if (res.success) {
+        localStorage.setItem('trainhub_session_token', res.data.token);
         setUser(res.data.user);
         addToast(res.message, 'success');
         setActiveTab(res.data.user.role === 'admin' ? 'admin' : 'home');
@@ -61,36 +66,29 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('trainhub_session_token');
     addToast('Anda telah logout dari TrainHub.', 'info');
     setActiveTab('login');
   };
 
-  const switchRole = (role) => {
-    if (role === 'admin') {
-      const adminUser = {
-        id: "usr-3",
-        name: "Budi Santoso, M.Kom",
-        email: "admin@trainhub.com",
-        role: "admin",
-        avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80",
-        title: "Head of Learning & Corporate Development",
-        department: "Human Capital"
-      };
-      setUser(adminUser);
-      addToast('Beralih ke mode Trainer/Admin.', 'info');
-      setActiveTab('admin');
-    } else {
-      setUser(defaultUser);
-      addToast('Beralih ke mode Karyawan.', 'info');
-      setActiveTab('home');
-    }
-  };
-
   const navigateTo = (tab, courseId = null) => {
+    setNotificationTarget(null);
     setActiveTab(tab);
     if (courseId) {
       setSelectedCourseId(courseId);
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openNotification = (notification) => {
+    setNotificationTarget(notification);
+    if (notification.trainingId) setSelectedCourseId(notification.trainingId);
+    const destination = {
+      grade: 'detail',
+      discussion: 'forum',
+      deadline: 'classroom'
+    }[notification.type] || 'detail';
+    setActiveTab(destination);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -100,18 +98,17 @@ export const AuthProvider = ({ children }) => {
       setUser,
       login,
       logout,
-      switchRole,
       activeTab,
       setActiveTab,
       navigateTo,
+      notificationTarget,
+      openNotification,
       selectedCourseId,
       setSelectedCourseId,
       globalSearch,
       setGlobalSearch,
       toasts,
-      addToast,
-      isTestingModalOpen,
-      setIsTestingModalOpen
+      addToast
     }}>
       {children}
     </AuthContext.Provider>

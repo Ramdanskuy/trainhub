@@ -5,8 +5,8 @@ import {
   Compass, 
   BarChart2, 
   MessageSquare, 
+  Bell,
   Search, 
-  FlaskConical, 
   User, 
   Shield, 
   LogOut, 
@@ -19,10 +19,8 @@ export const Navbar = () => {
     activeTab, 
     navigateTo, 
     logout, 
-    switchRole, 
     globalSearch, 
-    setGlobalSearch,
-    setIsTestingModalOpen 
+    setGlobalSearch
   } = useAuth();
   
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -69,6 +67,15 @@ export const Navbar = () => {
               <MessageSquare size={16} />
               <span>Forum Diskusi</span>
             </li>
+            {user.role === 'karyawan' && (
+              <li
+                className={`nav-item ${activeTab === 'notifikasi' ? 'active' : ''}`}
+                onClick={() => navigateTo('notifikasi')}
+              >
+                <Bell size={16} />
+                <span>Notifikasi</span>
+              </li>
+            )}
             {user.role === 'admin' && (
               <li 
                 className={`nav-item ${activeTab === 'admin' ? 'active' : ''}`}
@@ -99,16 +106,6 @@ export const Navbar = () => {
             />
           </div>
 
-          {/* Enrollment & Feature Testing Suite Button */}
-          <button 
-            className="btn-testing"
-            onClick={() => setIsTestingModalOpen(true)}
-            title="Buka Menu Pengujian Enrollment & Fitur"
-          >
-            <FlaskConical size={14} />
-            <span>Testing Suite</span>
-          </button>
-
           {/* User Avatar Menu */}
           <div className="avatar-menu">
             <button className="avatar-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
@@ -126,11 +123,6 @@ export const Navbar = () => {
                 <div className="dropdown-item" onClick={() => navigateTo('profil')}>
                   <User size={15} />
                   <span>Lihat Profil Saya</span>
-                </div>
-
-                <div className="dropdown-item" onClick={() => switchRole(user.role === 'admin' ? 'karyawan' : 'admin')}>
-                  <Shield size={15} />
-                  <span>Beralih ke Mode {user.role === 'admin' ? 'Karyawan' : 'Admin'}</span>
                 </div>
 
                 <div className="dropdown-item danger" onClick={logout}>

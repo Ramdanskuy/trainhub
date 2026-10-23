@@ -32,6 +32,7 @@ export const AdminDashboardPage = () => {
   // Course Form Modal State
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const [editingCourseId, setEditingCourseId] = useState(null);
+  const [courseFiles, setCourseFiles] = useState([]);
   const [courseForm, setCourseForm] = useState({
     title: '',
     description: '',
@@ -40,7 +41,8 @@ export const AdminDashboardPage = () => {
     mentor: 'Budi Santoso, M.Kom',
     duration: '6 Jam',
     coverUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80',
-    skills: 'Python, Data Analytics, Visualization'
+    skills: 'Python, Data Analytics, Visualization',
+    attachments: []
   });
 
   // Material Builder Modal State
@@ -79,18 +81,40 @@ export const AdminDashboardPage = () => {
   const handleSaveCourse = async (e) => {
     e.preventDefault();
     try {
+      const attachments = [...(courseForm.attachments || [])];
+      for (const file of courseFiles) {
+        const upload = await api.uploadFile(file);
+        if (!upload.success) throw new Error(upload.message);
+        attachments.push(upload.data);
+      }
+      const payload = { ...courseForm, attachments };
       if (editingCourseId) {
-        const res = await api.updateTraining(editingCourseId, courseForm);
+        const res = await api.updateTraining(editingCourseId, payload);
         if (res.success) addToast("Pelatihan berhasil diperbarui!", "success");
       } else {
-        const res = await api.createTraining(courseForm);
+        const res = await api.createTraining(payload);
         if (res.success) addToast("Pelatihan baru berhasil dibuat!", "success");
       }
+      setCourseFiles([]);
       setIsCourseModalOpen(false);
       await loadAdminData();
     } catch (err) {
-      addToast("Gagal menyimpan pelatihan.", "error");
+      addToast(err.message || "Gagal menyimpan pelatihan.", "error");
     }
+  };
+
+  const handleCourseFiles = (event) => {
+    const acceptedExtensions = new Set(['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.txt', '.md', '.csv', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mp3', '.zip']);
+    const selectedFiles = Array.from(event.target.files || []);
+    const validFiles = selectedFiles.filter(file => {
+      const extension = `.${file.name.split('.').pop().toLowerCase()}`;
+      return acceptedExtensions.has(extension) && file.size <= 10 * 1024 * 1024;
+    });
+    if (validFiles.length !== selectedFiles.length) {
+      addToast('Format file tidak didukung atau ukuran file melebihi 10 MB.', 'error');
+    }
+    setCourseFiles(current => [...current, ...validFiles]);
+    event.target.value = '';
   };
 
   const handleDeleteCourse = async (id) => {
@@ -196,8 +220,8 @@ export const AdminDashboardPage = () => {
     const payload = {
       ...fields,
       content: materialForm.type === 'article' ? articleToHtml(materialForm.content) : materialForm.content,
-      fileUrl: materialForm.type === 'pdf' ? materialForm.fileUrl : '',
-      fileName: materialForm.type === 'pdf' ? materialForm.fileName : '',
+      fileUrl: ['pdf', 'file'].includes(materialForm.type) ? materialForm.fileUrl : '',
+      fileName: ['pdf', 'file'].includes(materialForm.type) ? materialForm.fileName : '',
       videoUrl: materialForm.type === 'video' ? materialForm.videoUrl : '',
       quizData: materialForm.type === 'quiz' ? materialQuestions.map((question, index) => ({
         id: `q-${Date.now()}-${index}`,
@@ -236,17 +260,23 @@ export const AdminDashboardPage = () => {
     }
   };
 
-  const handleMaterialFile = (event) => {
+  const handleMaterialFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size > 1024 * 1024) {
-      addToast('Ukuran file maksimal 1 MB untuk penyimpanan demo ini.', 'error');
+    if (file.size > 10 * 1024 * 1024) {
+      addToast('Ukuran file maksimal 10 MB.', 'error');
       event.target.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setMaterialForm(current => ({ ...current, fileUrl: reader.result, fileName: file.name }));
-    reader.readAsDataURL(file);
+    try {
+      const result = await api.uploadFile(file);
+      if (!result.success) throw new Error(result.message);
+      setMaterialForm(current => ({ ...current, fileUrl: result.data.fileUrl, fileName: result.data.fileName }));
+      addToast('File berhasil diunggah.', 'success');
+    } catch (error) {
+      addToast(error.message || 'File gagal diunggah.', 'error');
+      event.target.value = '';
+    }
   };
 
   const handleGradeSubmission = async (e) => {
@@ -293,8 +323,10 @@ export const AdminDashboardPage = () => {
               mentor: 'Budi Santoso, M.Kom',
               duration: '6 Jam',
               coverUrl: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&auto=format&fit=crop&q=80',
-              skills: 'Modern Web, React, Node.js'
+              skills: 'Modern Web, React, Node.js',
+              attachments: []
             });
+            setCourseFiles([]);
             setIsCourseModalOpen(true);
           }}
         >
@@ -380,8 +412,10 @@ export const AdminDashboardPage = () => {
                                 mentor: c.mentor,
                                 duration: c.duration,
                                 coverUrl: c.coverUrl,
-                                skills: Array.isArray(c.skills) ? c.skills.join(', ') : c.skills
+                                skills: Array.isArray(c.skills) ? c.skills.join(', ') : c.skills,
+                                attachments: c.attachments || []
                               });
+                              setCourseFiles([]);
                               setIsCourseModalOpen(true);
                             }}
                           >
@@ -437,6 +471,7 @@ export const AdminDashboardPage = () => {
                           {module.description && <p>{module.description}</p>}
                         </div>
                         <div className="curriculum-actions">
+                          <button className="curriculum-icon-button" title="Tambah file materi" aria-label={`Tambah file untuk ${module.title}`} onClick={() => openMaterialForm('add', { type: 'file', moduleId: module.id }, module.id)}><Upload size={16} /></button>
                           <button className="curriculum-icon-button" title="Edit modul" aria-label={`Edit ${module.title}`} onClick={() => openModuleForm('edit', module)}><Edit size={16} /></button>
                           <button className="curriculum-icon-button curriculum-danger" title="Hapus modul" aria-label={`Hapus ${module.title}`} onClick={() => setDeleteTarget({ type: 'module', item: module })}><Trash2 size={16} /></button>
                         </div>
@@ -562,6 +597,17 @@ export const AdminDashboardPage = () => {
                   <label className="form-label">Cover Image URL:</label>
                   <input type="text" className="form-input" value={courseForm.coverUrl} onChange={(e) => setCourseForm({ ...courseForm, coverUrl: e.target.value })} />
                 </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="course-attachments">File Lampiran Pelatihan</label>
+                  <label className="curriculum-upload"><Upload size={15} /> Pilih File dari Perangkat<input id="course-attachments" type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.mp4,.webm,.mp3,.zip" onChange={handleCourseFiles} /></label>
+                  <small style={{ display: 'block', marginTop: 6, color: 'var(--text-muted)' }}>PDF dan format dokumen/media lainnya, maksimal 10 MB per file.</small>
+                  {[...(courseForm.attachments || []).map((file, index) => ({ ...file, existing: true, index })), ...courseFiles.map((file, index) => ({ fileName: file.name, existing: false, index }))].map(file => (
+                    <div key={`${file.existing ? 'saved' : 'new'}-${file.index}-${file.fileName}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}><FileText size={15} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.fileName}</span></span>
+                      <button type="button" className="curriculum-icon-button curriculum-danger" aria-label={`Hapus lampiran ${file.fileName}`} title="Hapus lampiran" onClick={() => file.existing ? setCourseForm(current => ({ ...current, attachments: current.attachments.filter((_, index) => index !== file.index) })) : setCourseFiles(current => current.filter((_, index) => index !== file.index))}><X size={15} /></button>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsCourseModalOpen(false)}>Batal</button>
@@ -597,9 +643,9 @@ export const AdminDashboardPage = () => {
               <h3>{viewingMaterial.title}</h3>
               <p className="curriculum-detail-meta"><Clock size={15} /> {viewingMaterial.duration || 'Durasi belum diatur'}</p>
               {viewingMaterial.description && <p>{viewingMaterial.description}</p>}
-              {viewingMaterial.type === 'pdf' && <p>File: {viewingMaterial.fileName || 'Belum ada nama file'}</p>}
+              {['pdf', 'file'].includes(viewingMaterial.type) && <p>File: {viewingMaterial.fileName || 'Belum ada nama file'}</p>}
               {viewingMaterial.type === 'video' && viewingMaterial.videoUrl && <a className="curriculum-resource-link" href={viewingMaterial.videoUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Buka video</a>}
-              {viewingMaterial.type === 'pdf' && viewingMaterial.fileUrl && <a className="curriculum-resource-link" href={viewingMaterial.fileUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Buka PDF</a>}
+              {['pdf', 'file'].includes(viewingMaterial.type) && viewingMaterial.fileUrl && <a className="curriculum-resource-link" href={viewingMaterial.fileUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Buka File</a>}
               {viewingMaterial.content && <div className="curriculum-detail-content">{viewingMaterial.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</div>}
               {viewingMaterial.type === 'quiz' && viewingMaterial.quizData?.map((question, index) => <div className="curriculum-quiz-preview" key={question.id || index}><strong>{index + 1}. {question.question}</strong><p>{question.options?.join(' · ')}</p></div>)}
               {viewingMaterial.type === 'assignment' && viewingMaterial.assignmentData?.deadline && <p>Deadline: {new Date(viewingMaterial.assignmentData.deadline).toLocaleString('id-ID')}</p>}
@@ -617,15 +663,15 @@ export const AdminDashboardPage = () => {
               <div className="modal-body">
                 <div className="form-group"><label className="form-label">Pilih Modul</label><select className="form-select" value={selectedModuleId} onChange={event => setSelectedModuleId(event.target.value)} required>{selectedCourseForContent.modules.map(module => <option key={module.id} value={module.id}>{module.title}</option>)}</select></div>
                 <div className="grid-2">
-                  <div className="form-group"><label className="form-label">Jenis Materi</label><select className="form-select" value={materialForm.type || 'article'} onChange={event => setMaterialForm({ ...materialForm, type: event.target.value })}><option value="article">Article</option><option value="pdf">PDF</option><option value="video">Video</option><option value="quiz">Quiz</option><option value="assignment">Assignment</option></select></div>
+                  <div className="form-group"><label className="form-label">Jenis Materi</label><select className="form-select" value={materialForm.type || 'article'} onChange={event => setMaterialForm({ ...materialForm, type: event.target.value })}><option value="article">Article</option><option value="pdf">PDF</option><option value="file">File Dokumen</option><option value="video">Video</option><option value="quiz">Quiz</option><option value="assignment">Assignment</option></select></div>
                   <div className="form-group"><label className="form-label">Durasi</label><input className="form-input" placeholder="Contoh: 15 Menit" value={materialForm.duration || ''} onChange={event => setMaterialForm({ ...materialForm, duration: event.target.value })} /></div>
                 </div>
                 <div className="form-group"><label className="form-label">Judul Materi</label><input className="form-input" value={materialForm.title || ''} onChange={event => setMaterialForm({ ...materialForm, title: event.target.value })} required /></div>
                 <div className="form-group"><label className="form-label">Deskripsi</label><textarea className="form-textarea" rows={2} value={materialForm.description || ''} onChange={event => setMaterialForm({ ...materialForm, description: event.target.value })} /></div>
                 {materialForm.type === 'article' && <div className="form-group"><label className="form-label">Isi Artikel</label><textarea className="form-textarea" rows={7} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} required /></div>}
-                {materialForm.type === 'pdf' && <>
+                {['pdf', 'file'].includes(materialForm.type) && <>
                   <div className="form-group"><label className="form-label">Nama File</label><input className="form-input" value={materialForm.fileName || ''} onChange={event => setMaterialForm({ ...materialForm, fileName: event.target.value })} placeholder="panduan.pdf" /></div>
-                  <div className="form-group"><label className="form-label">URL PDF atau unggah file (maks. 1 MB)</label><input className="form-input" type="url" placeholder="https://..." value={materialForm.fileUrl?.startsWith('data:') ? '' : materialForm.fileUrl || ''} onChange={event => setMaterialForm({ ...materialForm, fileUrl: event.target.value })} /><label className="curriculum-upload"><Upload size={15} /> Pilih file PDF<input type="file" accept="application/pdf,.pdf" onChange={handleMaterialFile} /></label>{materialForm.fileName && <small>{materialForm.fileName}</small>}</div>
+                  <div className="form-group"><label className="form-label">Unggah file (PDF, Office, gambar, video; maks. 10 MB)</label><label className="curriculum-upload"><Upload size={15} /> Pilih File dari Perangkat<input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.mp4,.webm,.mp3,.zip" onChange={handleMaterialFile} /></label>{materialForm.fileName && <small style={{ display: 'block', marginTop: 8 }}>{materialForm.fileName}</small>}{materialForm.fileUrl && <a className="curriculum-resource-link" href={materialForm.fileUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka file saat ini</a>}</div>
                   <div className="form-group"><label className="form-label">Informasi Materi</label><textarea className="form-textarea" rows={3} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} /></div>
                 </>}
                 {materialForm.type === 'video' && <><div className="form-group"><label className="form-label">URL Video</label><input type="url" className="form-input" placeholder="https://..." value={materialForm.videoUrl || ''} onChange={event => setMaterialForm({ ...materialForm, videoUrl: event.target.value })} /></div><div className="form-group"><label className="form-label">Deskripsi / Informasi Video</label><textarea className="form-textarea" rows={3} value={materialForm.content || ''} onChange={event => setMaterialForm({ ...materialForm, content: event.target.value })} /></div></>}

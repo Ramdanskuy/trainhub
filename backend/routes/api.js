@@ -1,12 +1,40 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { dataStore } from '../db/dataStore.js';
+import { createSessionToken, getSessionUserId } from '../services/sessionService.js';
 
 const router = express.Router();
+const uploadsDirectory = fileURLToPath(new URL('../uploads/', import.meta.url));
+const allowedFileTypes = {
+  '.pdf': 'application/pdf', '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.zip': 'application/zip'
+};
 
 // Helper middleware to extract user context
 const getUserFromHeader = (req) => {
-  const userId = req.headers['x-user-id'] || 'usr-1';
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : null;
+  const userId = getSessionUserId(token);
   return dataStore.getUserById(userId);
+};
+
+const requireAdmin = (req, res) => {
+  const user = getUserFromHeader(req);
+  if (!user || user.role !== 'admin') {
+    res.status(user ? 403 : 401).json({ success: false, message: 'Akses hanya untuk akun admin yang sudah login.' });
+    return null;
+  }
+  return user;
 };
 
 // --- Auth Routes ---
@@ -24,8 +52,37 @@ router.post('/auth/login', (req, res) => {
   return res.json({
     success: true,
     message: `Selamat datang kembali, ${user.name}!`,
-    data: { user, token: `token-${user.id}` }
+    data: { user, token: createSessionToken(user.id) }
   });
+});
+
+router.post('/uploads', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const { fileName, data } = req.body;
+  const safeName = typeof fileName === 'string' ? path.basename(fileName).replace(/[\\/]/g, '') : '';
+  const extension = path.extname(safeName).toLowerCase();
+  if (!safeName || !allowedFileTypes[extension] || typeof data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) {
+    return res.status(400).json({ success: false, message: 'Format file tidak didukung atau berkas tidak valid.' });
+  }
+
+  const fileBuffer = Buffer.from(data, 'base64');
+  if (!fileBuffer.length || fileBuffer.length > 10 * 1024 * 1024 || fileBuffer.toString('base64') !== data) {
+    return res.status(413).json({ success: false, message: 'Ukuran file maksimal 10 MB.' });
+  }
+  const storedName = `${randomUUID()}${extension}`;
+  try {
+    await mkdir(uploadsDirectory, { recursive: true });
+    await writeFile(path.join(uploadsDirectory, storedName), fileBuffer, { flag: 'wx' });
+    return res.status(201).json({
+      success: true,
+      message: 'File berhasil diunggah.',
+      data: { fileName: safeName, fileUrl: `/uploads/${storedName}`, mimeType: allowedFileTypes[extension] }
+    });
+  } catch (error) {
+    console.error('Upload file gagal:', error.message);
+    return res.status(500).json({ success: false, message: 'File tidak dapat disimpan di server.' });
+  }
 });
 
 router.get('/auth/me', (req, res) => {
@@ -65,10 +122,7 @@ router.get('/trainings/:id', (req, res) => {
 });
 
 router.post('/trainings', (req, res) => {
-  const user = getUserFromHeader(req);
-  if (user && user.role !== 'admin') {
-    return res.status(403).json({ success: false, message: "Akses ditolak. Fitur khusus Trainer/Admin." });
-  }
+  if (!requireAdmin(req, res)) return;
 
   const newTraining = dataStore.createTraining(req.body);
   return res.status(201).json({
@@ -79,10 +133,7 @@ router.post('/trainings', (req, res) => {
 });
 
 router.put('/trainings/:id', (req, res) => {
-  const user = getUserFromHeader(req);
-  if (user && user.role !== 'admin') {
-    return res.status(403).json({ success: false, message: "Akses ditolak. Fitur khusus Trainer/Admin." });
-  }
+  if (!requireAdmin(req, res)) return;
 
   const updated = dataStore.updateTraining(req.params.id, req.body);
   if (!updated) {
@@ -92,10 +143,7 @@ router.put('/trainings/:id', (req, res) => {
 });
 
 router.delete('/trainings/:id', (req, res) => {
-  const user = getUserFromHeader(req);
-  if (user && user.role !== 'admin') {
-    return res.status(403).json({ success: false, message: "Akses ditolak. Fitur khusus Trainer/Admin." });
-  }
+  if (!requireAdmin(req, res)) return;
 
   const success = dataStore.deleteTraining(req.params.id);
   if (!success) {
@@ -143,6 +191,12 @@ router.get('/my/trainings', (req, res) => {
   return res.json({ success: true, data: summary });
 });
 
+router.get('/notifications', (req, res) => {
+  const user = getUserFromHeader(req);
+  if (!user) return res.status(401).json({ success: false, message: 'Silakan login terlebih dahulu.' });
+  return res.json({ success: true, data: dataStore.getUserNotifications(user.id) });
+});
+
 // --- Material & Progress Routes ---
 router.post('/materials/:id/complete', (req, res) => {
   const user = getUserFromHeader(req);
@@ -163,6 +217,7 @@ router.post('/materials/:id/complete', (req, res) => {
 });
 
 router.post('/trainings/:id/modules', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { title, description, sequenceNumber } = req.body;
   if (!title) {
     return res.status(400).json({ success: false, message: "Judul modul wajib diisi." });
@@ -175,6 +230,7 @@ router.post('/trainings/:id/modules', (req, res) => {
 });
 
 router.put('/modules/:moduleId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { title, description, sequenceNumber } = req.body;
   if (!title) return res.status(400).json({ success: false, message: "Nama modul wajib diisi." });
   const module = dataStore.updateModule(req.params.moduleId, {
@@ -187,12 +243,14 @@ router.put('/modules/:moduleId', (req, res) => {
 });
 
 router.delete('/modules/:moduleId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const module = dataStore.deleteModule(req.params.moduleId);
   if (!module) return res.status(404).json({ success: false, message: "Modul tidak ditemukan." });
   return res.json({ success: true, message: "Modul berhasil dihapus.", data: module });
 });
 
 router.post('/modules/:moduleId/materials', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { title, type, content, description, duration, fileUrl, fileName, videoUrl, quizData, assignmentData } = req.body;
   if (!title || !type) {
     return res.status(400).json({ success: false, message: "Judul dan jenis materi wajib diisi." });
@@ -221,6 +279,7 @@ router.post('/modules/:moduleId/materials', (req, res) => {
 });
 
 router.put('/materials/:materialId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const { title, type, content, description, duration, fileUrl, fileName, videoUrl, quizData, assignmentData } = req.body;
   if (!title || !type) return res.status(400).json({ success: false, message: "Judul dan jenis materi wajib diisi." });
   const material = dataStore.updateMaterial(req.params.materialId, {
@@ -231,6 +290,7 @@ router.put('/materials/:materialId', (req, res) => {
 });
 
 router.delete('/materials/:materialId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const material = dataStore.deleteMaterial(req.params.materialId);
   if (!material) return res.status(404).json({ success: false, message: "Materi tidak ditemukan." });
   return res.json({ success: true, message: "Materi berhasil dihapus.", data: material });
@@ -257,22 +317,21 @@ router.post('/assignments/:id/submit', (req, res) => {
 });
 
 router.get('/submissions', (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const submissions = dataStore.getAllSubmissions();
   return res.json({ success: true, data: submissions });
 });
 
 router.post('/submissions/:id/evaluate', (req, res) => {
-  const user = getUserFromHeader(req);
-  if (user && user.role !== 'admin') {
-    return res.status(403).json({ success: false, message: "Akses ditolak. Fitur khusus Trainer/Admin." });
-  }
+  const user = requireAdmin(req, res);
+  if (!user) return;
 
   const { score, feedback } = req.body;
   if (score === undefined || score < 0 || score > 100) {
     return res.status(400).json({ success: false, message: "Nilai harus berada antara 0 - 100." });
   }
 
-  const evaluation = dataStore.evaluateSubmission(req.params.id, user ? user.id : 'usr-3', score, feedback);
+  const evaluation = dataStore.evaluateSubmission(req.params.id, user.id, score, feedback);
   if (!evaluation) {
     return res.status(404).json({ success: false, message: "Submission tidak ditemukan." });
   }
@@ -352,33 +411,6 @@ router.put('/users/profile', (req, res) => {
   }
   const updated = dataStore.updateUserProfile(user.id, req.body);
   return res.json({ success: true, message: "Profil berhasil diperbarui.", data: updated });
-});
-
-// --- Enrollment & System Testing Routes ---
-router.post('/testing/seed', (req, res) => {
-  dataStore.resetStore();
-  return res.json({
-    success: true,
-    message: "Database TrainHub berhasil di-reset ke kondisi awal (Seed Data Testing)!"
-  });
-});
-
-router.post('/testing/auto-complete', (req, res) => {
-  const user = getUserFromHeader(req);
-  const { trainingId } = req.body;
-  if (!user || !trainingId) {
-    return res.status(400).json({ success: false, message: "User ID dan Training ID dibutuhkan." });
-  }
-
-  // Ensure enrolled
-  dataStore.enrollUser(user.id, trainingId);
-  const updatedDetail = dataStore.autoCompleteCourse(user.id, trainingId);
-
-  return res.json({
-    success: true,
-    message: "Semua materi pada pelatihan ini berhasil ditandai selesai (Automated Testing)!",
-    data: updatedDetail
-  });
 });
 
 export default router;

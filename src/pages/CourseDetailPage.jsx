@@ -12,15 +12,14 @@ import {
   Video, 
   HelpCircle, 
   CheckSquare, 
-  MessageSquare,
-  FlaskConical
+  MessageSquare
 } from 'lucide-react';
 import { api } from '../services/api';
 
 export const CourseDetailPage = () => {
-  const { selectedCourseId, navigateTo, addToast, setIsTestingModalOpen } = useAuth();
+  const { selectedCourseId, navigateTo, addToast, notificationTarget } = useAuth();
   const [course, setCourse] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'curriculum', 'resources', 'submissions', 'discussions'
+  const [activeTab, setActiveTab] = useState(() => notificationTarget?.type === 'grade' ? 'submissions' : 'overview'); // 'overview', 'curriculum', 'resources', 'submissions', 'discussions'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -131,10 +130,6 @@ export const CourseDetailPage = () => {
                 </button>
               )}
 
-              <button className="btn btn-secondary btn-sm" onClick={() => setIsTestingModalOpen(true)}>
-                <FlaskConical size={14} />
-                <span>Uji Enrollment</span>
-              </button>
             </div>
           </div>
         </div>
@@ -221,6 +216,7 @@ export const CourseDetailPage = () => {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {mat.type === 'article' && <FileText size={16} color="#2563eb" />}
                             {mat.type === 'pdf' && <FileText size={16} color="#dc2626" />}
+                            {mat.type === 'file' && <FileText size={16} color="#0369a1" />}
                             {mat.type === 'video' && <Video size={16} color="#16a34a" />}
                             {mat.type === 'quiz' && <HelpCircle size={16} color="#f59e0b" />}
                             {mat.type === 'assignment' && <CheckSquare size={16} color="#7c3aed" />}
@@ -261,6 +257,20 @@ export const CourseDetailPage = () => {
                   Unduh File
                 </a>
               </div>
+              {course.attachments?.map(file => (
+                <div key={file.fileUrl} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px', marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <FileText size={20} color="#0369a1" />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '13px', overflowWrap: 'anywhere' }}>{file.fileName}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Lampiran pelatihan</div>
+                    </div>
+                  </div>
+                  <a href={file.fileUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm" download>
+                    Unduh File
+                  </a>
+                </div>
+              ))}
             </div>
           )}
 

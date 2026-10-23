@@ -4,10 +4,11 @@ import { MessageSquare, Plus, Search, Send, Clock, User, ShieldCheck } from 'luc
 import { api } from '../services/api';
 
 export const ForumPage = () => {
-  const { user, addToast } = useAuth();
+  const { user, addToast, notificationTarget } = useAuth();
   const [discussions, setDiscussions] = useState([]);
   const [search, setSearch] = useState('');
-  const [courseFilter, setCourseFilter] = useState('all');
+  const [courseFilter, setCourseFilter] = useState(() => notificationTarget?.type === 'discussion' ? notificationTarget.trainingId : 'all');
+  const [focusedDiscussionId, setFocusedDiscussionId] = useState(() => notificationTarget?.type === 'discussion' ? notificationTarget.discussionId : null);
 
   // New Discussion Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -15,7 +16,7 @@ export const ForumPage = () => {
   const [newContent, setNewContent] = useState('');
 
   // Expand Thread State
-  const [expandedThreadId, setExpandedThreadId] = useState(null);
+  const [expandedThreadId, setExpandedThreadId] = useState(() => notificationTarget?.type === 'discussion' ? notificationTarget.discussionId : null);
   const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
@@ -66,6 +67,10 @@ export const ForumPage = () => {
     }
   };
 
+  const visibleDiscussions = focusedDiscussionId
+    ? discussions.filter(discussion => discussion.id === focusedDiscussionId)
+    : discussions;
+
   return (
     <div className="main-content">
       {/* Header */}
@@ -96,7 +101,7 @@ export const ForumPage = () => {
               style={{ width: '100%' }}
               placeholder="Cari kata kunci diskusi..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setFocusedDiscussionId(null); setSearch(e.target.value); }}
             />
           </div>
 
@@ -104,7 +109,7 @@ export const ForumPage = () => {
             className="form-select" 
             style={{ width: 'auto', padding: '6px 12px', fontSize: '13px' }}
             value={courseFilter}
-            onChange={(e) => setCourseFilter(e.target.value)}
+            onChange={(e) => { setFocusedDiscussionId(null); setCourseFilter(e.target.value); }}
           >
             <option value="all">Semua Pelatihan</option>
             <option value="trn-101">Introduction to Data Science & Analytics</option>
@@ -115,7 +120,7 @@ export const ForumPage = () => {
 
       {/* Discussion Threads List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {discussions.map(disc => {
+        {visibleDiscussions.map(disc => {
           const isExpanded = expandedThreadId === disc.id;
           return (
             <div key={disc.id} className="card" style={{ padding: '20px' }}>

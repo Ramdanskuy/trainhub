@@ -8,6 +8,8 @@ export const ProfilePage = () => {
   const { user, setUser, addToast, navigateTo } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user ? user.name : '');
+  const [address, setAddress] = useState(user?.address || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [title, setTitle] = useState(user ? user.title : '');
   const [bio, setBio] = useState(user ? user.bio : '');
   const [avatarDraft, setAvatarDraft] = useState(user?.avatar || '');
@@ -35,7 +37,7 @@ export const ProfilePage = () => {
     e.preventDefault();
     setIsSaving(true);
     try {
-      const res = await api.updateProfile({ name, title, bio, avatar: avatarDraft });
+      const res = await api.updateProfile({ name, title, bio, address, phone, avatar: avatarDraft });
       if (res.success) {
         setUser(res.data);
         addToast("Profil berhasil diperbarui!", "success");
@@ -52,6 +54,8 @@ export const ProfilePage = () => {
 
   const handleCancelEdit = () => {
     setName(user?.name || '');
+    setAddress(user?.address || '');
+    setPhone(user?.phone || '');
     setTitle(user?.title || '');
     setBio(user?.bio || '');
     setAvatarDraft(user?.avatar || '');
@@ -107,6 +111,9 @@ export const ProfilePage = () => {
               <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '6px' }}>
                 {user.title || 'Karyawan Enterprise'} — Divisi {user.department || 'IT'}
               </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 6, overflowWrap: 'anywhere' }}>
+                {user.phone || 'Nomor telepon belum diisi'} · {user.address || 'Alamat belum diisi'}
+              </div>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '540px' }}>
                 {user.bio || 'Tidak ada biodata.'}
               </p>
@@ -145,6 +152,17 @@ export const ProfilePage = () => {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
+              </div>
+            </div>
+
+            <div className="grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="profile-address">Alamat:</label>
+                <textarea id="profile-address" className="form-textarea" rows={2} maxLength={250} value={address} onChange={event => setAddress(event.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="profile-phone">Nomor Telepon:</label>
+                <input id="profile-phone" type="tel" className="form-input" maxLength={20} value={phone} onChange={event => setPhone(event.target.value)} />
               </div>
             </div>
 

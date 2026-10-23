@@ -20,7 +20,7 @@ Sistem ini memiliki **dua peran utama**:
 
 ### 🔐 Autentikasi & Otorisasi
 - Login berdasarkan **email & password**
-- Switch role cepat antara **Karyawan** dan **Admin** (untuk testing)
+- Akun admin hanya dapat masuk menggunakan akun admin yang sudah tersedia
 - Sesi tersimpan di `localStorage`
 - Logout dengan reset sesi
 
@@ -70,18 +70,11 @@ Sistem ini memiliki **dua peran utama**:
 - **Tabel manajemen pelatihan** (CRUD): tambah, edit, hapus/arsipkan pelatihan
 - **Tabel review submission** karyawan: evaluasi, beri nilai (0–100), berikan feedback
 - **Modal form** untuk pembuatan & pengeditan pelatihan
+- Tambah/edit modul dan unggah file materi (PDF, Office, gambar, audio, atau video; maksimal 10 MB)
 
 ### 🏆 Sertifikat
 - Modal sertifikat otomatis ketika semua materi pelatihan selesai (100%)
 - Desain sertifikat digital dengan nama peserta, judul pelatihan, dan tanggal
-
-### 🧪 Enrollment & Testing Suite
-- Modal testing interaktif yang bisa diakses dari navbar
-- **One-click role switch** antara Karyawan ↔ Admin
-- **Enroll / Unenroll testing** langsung dari panel
-- **Auto-complete course** (otomatis menyelesaikan semua materi suatu pelatihan)
-- **Database re-seed** (reset semua data ke kondisi awal)
-- Status health check server
 
 ### 🔔 Notifikasi Toast
 - Notifikasi pop-up real-time untuk setiap aksi (sukses, error, info)
@@ -129,7 +122,6 @@ IPPL/
 │   │   ├── StatCard.jsx            # Kartu statistik dashboard
 │   │   ├── Toast.jsx               # Notifikasi pop-up
 │   │   ├── CertificateModal.jsx    # Modal sertifikat digital
-│   │   └── EnrollmentTestingModal.jsx # Panel testing interaktif
 │   ├── context/
 │   │   └── AuthContext.jsx         # Global state management (auth, nav, toast)
 │   ├── pages/                      # Halaman-halaman aplikasi
@@ -172,6 +164,8 @@ cd "d:\Universirtas Islam Riau\Project\IPPL"
 npm install
 ```
 
+Salin `.env.example` menjadi `.env`, lalu atur `AUTH_SECRET` dengan nilai acak yang panjang.
+
 ### 2. Jalankan Aplikasi (Development Mode)
 
 ```bash
@@ -180,7 +174,7 @@ npm run dev
 ```
 
 Perintah ini akan menjalankan:
-- ⚙️ **Backend** Express API di `http://localhost:5000`
+- ⚙️ **Backend** Express API di `http://localhost:5006`
 - 🌐 **Frontend** Vite dev server di `http://localhost:5173`
 
 ### 3. Buka di Browser
@@ -209,7 +203,7 @@ npm run preview
 
 ---
 
-## 🔑 Akun Login Testing
+## 🔑 Akun Bawaan
 
 Aplikasi sudah dilengkapi **seed data** dengan akun-akun berikut:
 
@@ -218,8 +212,6 @@ Aplikasi sudah dilengkapi **seed data** dengan akun-akun berikut:
 | **Karyawan** | `karyawan@trainhub.com` | `password123` |
 | **Karyawan 2** | `karyawan2@trainhub.com` | `password123` |
 | **Admin / Trainer** | `admin@trainhub.com` | `password123` |
-
-> **Tips:** Gunakan tombol **🧪 Testing Suite** di navbar untuk berpindah peran (role switch) tanpa perlu logout & login ulang.
 
 ---
 
@@ -254,6 +246,7 @@ Aplikasi sudah dilengkapi **seed data** dengan akun-akun berikut:
 | `POST` | `/api/materials/:id/complete` | Tandai materi selesai |
 | `POST` | `/api/trainings/:id/modules` | Tambah modul (Admin) |
 | `POST` | `/api/modules/:moduleId/materials` | Tambah materi ke modul (Admin) |
+| `POST` | `/api/uploads` | Unggah berkas materi admin (maks. 10 MB) |
 
 ### Tugas & Evaluasi
 | Method | Endpoint | Deskripsi |
@@ -274,12 +267,6 @@ Aplikasi sudah dilengkapi **seed data** dengan akun-akun berikut:
 |--------|----------|-----------|
 | `GET` | `/api/users/profile` | Ambil data profil |
 | `PUT` | `/api/users/profile` | Update profil |
-
-### Testing
-| Method | Endpoint | Deskripsi |
-|--------|----------|-----------|
-| `POST` | `/api/testing/seed` | Reset database ke seed data awal |
-| `POST` | `/api/testing/auto-complete` | Otomatis selesaikan semua materi |
 
 ---
 

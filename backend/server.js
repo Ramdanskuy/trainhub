@@ -1,13 +1,23 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import apiRoutes from './routes/api.js';
+
+try {
+  process.loadEnvFile();
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
 
 const app = express();
 const PORT = process.env.PORT || 5006;
+const uploadsDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'uploads');
 
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(uploadsDirectory, { dotfiles: 'deny', index: false }));
 
 // Register API Routes
 app.use('/api', apiRoutes);
