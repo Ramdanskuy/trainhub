@@ -1,10 +1,10 @@
 // API Client Service for TrainHub Frontend
 
 const getHeaders = () => {
-  const user = JSON.parse(localStorage.getItem('trainhub_user') || 'null');
+  const token = localStorage.getItem('trainhub_session_token');
   return {
     'Content-Type': 'application/json',
-    'x-user-id': user ? user.id : 'usr-1'
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 };
 
@@ -31,12 +31,24 @@ const requestJson = async (path, options = {}) => {
 export const api = {
   // Auth
   login: async (email, password) => {
-    const res = await fetch('/api/auth/login', {
+    return requestJson('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    return res.json();
+  },
+
+  uploadFile: async (file) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return requestJson('/api/uploads', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ fileName: file.name, data: btoa(binary) })
+    });
   },
 
   getMe: async () => {
@@ -100,6 +112,11 @@ export const api = {
 
   getMyTrainings: async () => {
     const res = await fetch('/api/my/trainings', { headers: getHeaders() });
+    return res.json();
+  },
+
+  getNotifications: async () => {
+    const res = await fetch('/api/notifications', { headers: getHeaders() });
     return res.json();
   },
 
@@ -211,21 +228,4 @@ export const api = {
     });
   },
 
-  // Testing & Enrollment Suite
-  seedDatabase: async () => {
-    const res = await fetch('/api/testing/seed', {
-      method: 'POST',
-      headers: getHeaders()
-    });
-    return res.json();
-  },
-
-  autoCompleteCourse: async (trainingId) => {
-    const res = await fetch('/api/testing/auto-complete', {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ trainingId })
-    });
-    return res.json();
-  }
 };

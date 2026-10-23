@@ -1,5 +1,6 @@
 // backend/controllers/authController.js
 import { dataStore } from '../db/dataStore.js';
+import { createSessionToken, getSessionUserId } from '../services/sessionService.js';
 
 export const login = (req, res) => {
   const { email, password } = req.body;
@@ -13,7 +14,7 @@ export const login = (req, res) => {
   return res.json({
     success: true,
     message: `Selamat datang kembali, ${user.name}!`,
-    data: { user, token: `token-${user.id}` }
+    data: { user, token: createSessionToken(user.id) }
   });
 };
 
@@ -23,7 +24,9 @@ export const logout = (req, res) => {
 };
 
 export const getMe = (req, res) => {
-  const userId = req.headers['x-user-id'];
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : null;
+  const userId = getSessionUserId(token);
   const user = dataStore.getUserById(userId);
   if (!user) {
     return res.status(401).json({ success: false, message: 'Sesi tidak ditemukan.' });

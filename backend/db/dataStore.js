@@ -1,3 +1,6 @@
+import { scryptSync, timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   initialUsers,
   initialTrainings,
@@ -10,13 +13,32 @@ import {
   initialDiscussions
 } from './seedData.js';
 
+const registeredUsersFile = fileURLToPath(new URL('./registeredUsers.json', import.meta.url));
+
+const loadRegisteredUsers = () => {
+  try {
+    const users = JSON.parse(readFileSync(registeredUsersFile, 'utf8'));
+    return Array.isArray(users) ? users : [];
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+};
+
+const passwordMatches = (password, storedPassword) => {
+  if (!storedPassword.startsWith('scrypt:')) return storedPassword === password;
+  const [, salt, expected] = storedPassword.split(':');
+  const actual = scryptSync(password, salt, 64).toString('hex');
+  return timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
+};
+
 class DataStore {
   constructor() {
     this.resetStore();
   }
 
   resetStore() {
-    this.users = JSON.parse(JSON.stringify(initialUsers));
+    this.users = [...JSON.parse(JSON.stringify(initialUsers)), ...loadRegisteredUsers()];
     this.trainings = JSON.parse(JSON.stringify(initialTrainings));
     this.modules = JSON.parse(JSON.stringify(initialModules));
     this.materials = JSON.parse(JSON.stringify(initialMaterials));
@@ -31,7 +53,7 @@ class DataStore {
   login(email, password) {
     const user = this.users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (!user) return null;
-    if (user.password !== password && password !== 'password') return null;
+    if (!passwordMatches(password, user.password)) return null;
     const { password: _, ...userWithoutPass } = user;
     return userWithoutPass;
   }
@@ -46,7 +68,7 @@ class DataStore {
   updateUserProfile(id, data) {
     const user = this.users.find(u => u.id === id);
     if (!user) return null;
-    const profileFields = ['name', 'title', 'bio'];
+    const profileFields = ['name', 'title', 'bio', 'address', 'phone'];
     profileFields.forEach(field => {
       if (Object.prototype.hasOwnProperty.call(data, field)) user[field] = data[field];
     });
@@ -236,14 +258,6 @@ class DataStore {
     return { progressPercent: newProgressPercent, completedMaterialId: materialId };
   }
 
-  autoCompleteCourse(userId, trainingId) {
-    const courseMaterials = this.materials.filter(m => m.trainingId === trainingId);
-    courseMaterials.forEach(mat => {
-      this.completeMaterial(userId, mat.id);
-    });
-    return this.getTrainingDetail(trainingId, userId);
-  }
-
   calculateTrainingProgress(userId, trainingId) {
     const total = this.materials.filter(m => m.trainingId === trainingId).length;
     if (total === 0) return 0;
@@ -292,6 +306,82 @@ class DataStore {
       learningTimeHours: 18,
       courses: detailedCourses
     };
+  }
+
+  getUserNotifications(userId) {
+    const now = Date.now();
+    const twoWeeksFromNow = now + 14 * 24 * 60 * 60 * 1000;
+    const enrollments = this.enrollments.filter(enrollment => enrollment.userId === userId);
+    const enrollmentByTraining = new Map(enrollments.map(enrollment => [enrollment.trainingId, enrollment]));
+    const notifications = [];
+
+    this.submissions.filter(submission => submission.userId === userId).forEach(submission => {
+      const evaluation = this.evaluations.find(item => item.submissionId === submission.id);
+      if (!evaluation) return;
+      const assignment = this.materials.find(item => item.id === submission.assignmentId);
+      const training = this.trainings.find(item => item.id === submission.trainingId);
+      notifications.push({
+        id: `grade-${evaluation.id}`,
+        type: 'grade',
+        title: 'Tugas sudah dinilai',
+        message: `${assignment?.title || 'Tugas'} mendapat nilai ${evaluation.score}/100.`,
+        trainingId: submission.trainingId,
+        submissionId: submission.id,
+        trainingTitle: training?.title || 'Pelatihan',
+        createdAt: evaluation.evaluatedAt
+      });
+    });
+
+    this.discussions.filter(discussion => enrollmentByTraining.has(discussion.trainingId)).forEach(discussion => {
+      const enrollment = enrollmentByTraining.get(discussion.trainingId);
+      const enrolledAt = Date.parse(enrollment.enrolledAt) || 0;
+      const trainingTitle = this.trainings.find(item => item.id === discussion.trainingId)?.title || discussion.courseTitle || 'Pelatihan';
+
+      if (discussion.userId !== userId && Date.parse(discussion.createdAt) >= enrolledAt) {
+        notifications.push({
+          id: `discussion-${discussion.id}`,
+          type: 'discussion',
+          title: 'Diskusi baru di pelatihan Anda',
+          message: `${discussion.userName} memulai diskusi: “${discussion.title}”.`,
+          trainingId: discussion.trainingId,
+          discussionId: discussion.id,
+          trainingTitle,
+          createdAt: discussion.createdAt
+        });
+      }
+
+      (discussion.replies || []).filter(reply => discussion.userId === userId && reply.userId !== userId && Date.parse(reply.createdAt) >= enrolledAt).forEach(reply => {
+        notifications.push({
+          id: `reply-${reply.id}`,
+          type: 'discussion',
+          title: 'Diskusi Anda mendapat balasan',
+          message: `${reply.userName} membalas “${discussion.title}”.`,
+          trainingId: discussion.trainingId,
+          discussionId: discussion.id,
+          trainingTitle,
+          createdAt: reply.createdAt
+        });
+      });
+    });
+
+    this.materials.filter(material => enrollmentByTraining.has(material.trainingId) && material.type === 'assignment' && material.assignmentData?.deadline).forEach(material => {
+      const deadline = Date.parse(material.assignmentData.deadline);
+      const alreadySubmitted = this.submissions.some(submission => submission.userId === userId && submission.assignmentId === material.id);
+      if (deadline <= now || deadline > twoWeeksFromNow || alreadySubmitted) return;
+      const trainingTitle = this.trainings.find(item => item.id === material.trainingId)?.title || 'Pelatihan';
+      notifications.push({
+        id: `deadline-${material.id}`,
+        type: 'deadline',
+        title: 'Tenggat tugas mendekat',
+        message: `Kumpulkan “${material.title}” sebelum ${new Date(deadline).toLocaleDateString('id-ID')}.`,
+        trainingId: material.trainingId,
+        materialId: material.id,
+        trainingTitle,
+        createdAt: new Date(now).toISOString()
+      });
+    });
+
+    return notifications.sort((first, second) => Date.parse(second.createdAt) - Date.parse(first.createdAt));
   }
 
   // --- Curriculum & Materials (Admin) ---

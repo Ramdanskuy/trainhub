@@ -20,7 +20,7 @@ import { api } from '../services/api';
 import { CertificateModal } from '../components/CertificateModal';
 
 export const ClassroomPage = () => {
-  const { selectedCourseId, navigateTo, addToast, user } = useAuth();
+  const { selectedCourseId, navigateTo, addToast, user, notificationTarget } = useAuth();
   const [course, setCourse] = useState(null);
   const [currentMaterial, setCurrentMaterial] = useState(null);
   const [expandedModules, setExpandedModules] = useState({});
@@ -52,10 +52,11 @@ export const ClassroomPage = () => {
         res.data.modules.forEach(m => { expanded[m.id] = true; });
         setExpandedModules(expanded);
 
-        // Set first uncompleted or first material as active
-        if (res.data.modules.length > 0 && res.data.modules[0].materials.length > 0) {
-          setCurrentMaterial(res.data.modules[0].materials[0]);
-        }
+        const requestedMaterial = notificationTarget?.type === 'deadline' && notificationTarget.trainingId === res.data.id
+          ? res.data.modules.flatMap(module => module.materials).find(material => material.id === notificationTarget.materialId)
+          : null;
+        const firstMaterial = res.data.modules.find(module => module.materials.length > 0)?.materials[0];
+        setCurrentMaterial(requestedMaterial || firstMaterial || null);
       }
     } catch (err) {
       console.error(err);
@@ -223,6 +224,7 @@ export const ClassroomPage = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                               {mat.type === 'article' && <FileText size={14} color="#2563eb" />}
                               {mat.type === 'pdf' && <FileText size={14} color="#dc2626" />}
+                              {mat.type === 'file' && <FileText size={14} color="#0369a1" />}
                               {mat.type === 'video' && <Video size={14} color="#16a34a" />}
                               {mat.type === 'quiz' && <HelpCircle size={14} color="#f59e0b" />}
                               {mat.type === 'assignment' && <CheckSquare size={14} color="#7c3aed" />}
@@ -299,6 +301,14 @@ export const ClassroomPage = () => {
                       <Download size={14} /> Buka / Download PDF
                     </a>
                   </div>
+                </div>
+              )}
+
+              {currentMaterial.type === 'file' && (
+                <div style={{ maxWidth: 760, padding: 20, border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                  <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>{currentMaterial.fileName || 'File materi'}</p>
+                  {currentMaterial.content && <p style={{ marginBottom: 16 }}>{currentMaterial.content}</p>}
+                  {currentMaterial.fileUrl && <a href={currentMaterial.fileUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm"><Download size={14} /> Buka / Unduh File</a>}
                 </div>
               )}
 
